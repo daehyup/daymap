@@ -1,0 +1,23 @@
+[2026-06-01 03:13] [Codex] 완료: 프로젝트 초기화 (init: daymap project)
+다음작업: FastAPI 백엔드 기본 구조 세팅
+
+[2026-06-01 03:53] [Flutter] 완료: Flutter 앱 기본 구조 세팅 (화면 골격 3개 - 홈/입력/오늘)
+다음작업: 입력 화면 API 연결
+
+[2026-06-01 03:53] [백엔드] 완료: FastAPI 백엔드 초기 구조 및 일정 생성 API 구현
+다음작업: tasks/streaks 라우터 구현
+
+[2026-06-01 03:55] [백엔드] 완료: 백엔드 + Flutter 앱 초기 통합 (POST /events/, GET /events/{user_id}, 입력화면 API 연결)
+다음작업: PATCH /tasks/{task_id}/complete 및 GET /tasks/{user_id}/today 구현
+
+[2026-06-01 04:07] [백엔드] 완료: PATCH /tasks/{task_id}/complete 구현 (is_completed→true, completed_at 저장, streaks XP +10)
+다음작업: Flutter today_screen.dart에서 완료 API 연결 필요
+
+[2026-06-01 04:07] [백엔드] 완료: GET /tasks/{user_id}/today 구현 (오늘 날짜 필터 + scheduled_at 정렬)
+다음작업: Flutter today_screen.dart 실제 API 데이터 연결
+
+[2026-06-01 04:09] [Codex] 완료: 백엔드 API smoke test 추가 (backend/test_api.py)
+다음작업: Flutter task_card.dart 완료 애니메이션 구현
+
+[2026-06-01 04:13] [Codex] 완료: backend/README.md API 문서 최신화
+다음작업: POST /streaks/{user_id} 스트릭 업데이트 구현
