@@ -21,3 +21,15 @@
 
 [2026-06-01 04:13] [Codex] 완료: backend/README.md API 문서 최신화
 다음작업: POST /streaks/{user_id} 스트릭 업데이트 구현
+
+[2026-06-01 18:00] [Flutter] 완료: today_screen.dart 실제 API 연결 (getTodayTasks 호출, 로딩/에러/빈상태, 진행률 헤더, 낙관적 업데이트, scheduled_time→scheduled_at 필드명 수정)
+다음작업: task_card.dart 완료 시 바운스 애니메이션 + GET /streaks/{user_id} 구현 + streak_widget 실데이터 연결
+
+[2026-06-01 18:10] [Flutter] 완료: task_card.dart 바운스 완료 애니메이션 (TweenSequence scale 1.0→1.35→0.9→1.0, didUpdateWidget 트리거, 시간 포맷 HH:mm 변환)
+다음작업: streak_widget.dart XP 표시 추가 검토
+
+[2026-06-01 18:10] [백엔드] 완료: GET /streaks/{user_id} 구현 (신규 유저 0 반환), POST /{user_id}/penalty 구현 (current_streak 초기화)
+다음작업: 페널티 자동 적용 로직 (미완료 태스크 감지) 검토
+
+[2026-06-01 18:10] [Flutter] 완료: streak_widget.dart 실데이터 연결 (getStreak() 추가, today_screen에서 Future.wait 병렬 로드, StreakWidget에 current_streak 전달)
+다음작업: 푸시 알림(FCM) 연동 또는 홈 화면 실데이터 연결

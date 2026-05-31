@@ -12,24 +12,31 @@ class TodayScreen extends StatefulWidget {
 
 class _TodayScreenState extends State<TodayScreen> {
   List<Map<String, dynamic>> _tasks = [];
+  int _currentStreak = 0;
   bool _isLoading = true;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _loadTasks();
+    _loadAll();
   }
 
-  Future<void> _loadTasks() async {
+  Future<void> _loadAll() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
     try {
-      final tasks = await ApiService.getTodayTasks();
+      final results = await Future.wait([
+        ApiService.getTodayTasks(),
+        ApiService.getStreak(),
+      ]);
       if (!mounted) return;
-      setState(() => _tasks = tasks);
+      setState(() {
+        _tasks = results[0] as List<Map<String, dynamic>>;
+        _currentStreak = ((results[1] as Map<String, dynamic>)['current_streak'] as num?)?.toInt() ?? 0;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _errorMessage = '일정을 불러오지 못했어요.\n잠시 후 다시 시도해주세요.');
@@ -37,6 +44,8 @@ class _TodayScreenState extends State<TodayScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  Future<void> _loadTasks() => _loadAll();
 
   Future<void> _toggleTask(int index) async {
     final task = _tasks[index];
@@ -67,9 +76,9 @@ class _TodayScreenState extends State<TodayScreen> {
         title: const Text('오늘의 일정'),
         centerTitle: false,
         actions: [
-          const Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: StreakWidget(streak: 0),
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: StreakWidget(streak: _currentStreak),
           ),
         ],
       ),

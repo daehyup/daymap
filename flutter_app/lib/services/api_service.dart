@@ -31,6 +31,18 @@ class ApiService {
     }
   }
 
+  // 스트릭 및 XP 조회
+  static Future<Map<String, dynamic>> getStreak() async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/streaks/$_userId'),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    }
+    throw Exception('스트릭 조회 실패: ${response.statusCode}');
+  }
+
   // 오늘의 태스크 목록 조회
   static Future<List<Map<String, dynamic>>> getTodayTasks() async {
     final response = await http.get(
