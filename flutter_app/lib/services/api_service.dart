@@ -34,13 +34,16 @@ class ApiService {
   // 오늘의 태스크 목록 조회
   static Future<List<Map<String, dynamic>>> getTodayTasks() async {
     final response = await http.get(
-      Uri.parse('$_baseUrl/tasks/today'),
-      headers: {'Content-Type': 'application/json'},
+      Uri.parse('$_baseUrl/tasks/$_userId/today'),
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(utf8.decode(response.bodyBytes));
-      return List<Map<String, dynamic>>.from(data['tasks']);
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      // 백엔드가 리스트 또는 {"tasks": [...]} 형태 모두 허용
+      if (decoded is List) {
+        return List<Map<String, dynamic>>.from(decoded);
+      }
+      return List<Map<String, dynamic>>.from(decoded['tasks'] as List);
     }
     throw Exception('태스크 조회 실패: ${response.statusCode}');
   }
