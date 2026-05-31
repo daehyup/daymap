@@ -1,6 +1,6 @@
 # Daymap Backend API
 
-FastAPI backend for Daymap, an AI-powered daily planner. The backend accepts natural-language schedule text, uses Groq to distribute tasks, stores events and tasks in Supabase, and exposes task completion APIs for XP updates.
+Daymap backend is a FastAPI service that turns natural-language schedule text into events and tasks, stores them in Supabase, and tracks task completion XP.
 
 ## Stack
 
@@ -12,13 +12,13 @@ FastAPI backend for Daymap, an AI-powered daily planner. The backend accepts nat
 
 ## Setup
 
-Install dependencies:
+Install dependencies from the repository root:
 
 ```bash
 pip install -r backend/requirements.txt
 ```
 
-Create `backend/.env` based on `backend/.env.example`:
+Create `backend/.env` with the required service credentials:
 
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
@@ -27,17 +27,60 @@ GROQ_API_KEY=your-groq-api-key
 FCM_SERVER_KEY=your-firebase-server-key
 ```
 
-Run the API server:
+Run the API locally:
 
 ```bash
 cd backend
 uvicorn main:app --reload
 ```
 
-Default local base URL:
+Default base URL:
 
 ```text
 http://127.0.0.1:8000
+```
+
+## Response Models
+
+### Event
+
+```json
+{
+  "user_id": "test-user",
+  "title": "시험 준비",
+  "description": "정보처리기사 실기 7월 20일",
+  "scheduled_at": "2026-06-01T10:00:00",
+  "id": "event-id",
+  "created_at": "2026-06-01T10:00:00"
+}
+```
+
+### Task
+
+```json
+{
+  "user_id": "test-user",
+  "event_id": "event-id",
+  "title": "정보처리기사 실기 공부",
+  "duration_minutes": 60,
+  "scheduled_at": "2026-06-02T09:00:00",
+  "id": "task-id",
+  "is_completed": false,
+  "completed_at": null,
+  "created_at": "2026-06-01T10:00:00"
+}
+```
+
+### Streak
+
+```json
+{
+  "user_id": "test-user",
+  "current_streak": 1,
+  "longest_streak": 1,
+  "total_xp": 10,
+  "last_completed_at": "2026-06-01T15:00:00+00:00"
+}
 ```
 
 ## Health
@@ -58,7 +101,7 @@ Response:
 
 ### POST `/events/`
 
-Creates an event from natural-language input, asks Groq to distribute tasks, then saves the event and generated tasks to Supabase.
+Creates an event from natural-language input, asks Groq to distribute tasks, saves the event to `events`, and saves generated tasks to `tasks`.
 
 Request body:
 
@@ -68,10 +111,6 @@ Request body:
   "raw_text": "정보처리기사 실기 7월 20일, 기말고사 6월 25일"
 }
 ```
-
-Validation:
-
-- `raw_text` must not be empty or whitespace.
 
 Success response:
 
@@ -103,13 +142,13 @@ Success response:
 
 Errors:
 
-- `422`: empty schedule text
+- `422`: `raw_text` is empty or whitespace
 - `502`: Groq task distribution failed
 - `500`: Supabase event or task insert failed
 
 ### GET `/events/{user_id}`
 
-Returns events for a user, sorted by `created_at` descending.
+Returns all events for a user, sorted by `created_at` descending.
 
 Response:
 
@@ -158,7 +197,7 @@ Current response:
 
 ### GET `/tasks/{user_id}/today`
 
-Returns today's tasks for the user, filtered by `scheduled_at` and sorted by `scheduled_at` ascending.
+Returns today's tasks for a user, filtered by `scheduled_at` from local start of day through start of tomorrow, sorted by `scheduled_at` ascending.
 
 Response:
 
@@ -180,7 +219,7 @@ Response:
 
 ### PATCH `/tasks/{task_id}/complete`
 
-Marks a task as completed and adds 10 XP to the user's streak record. If the user does not have a streak row, one is created.
+Marks a task as completed and sets `completed_at` to the current UTC timestamp. Adds 10 XP to the user's `streaks.total_xp`; if no streak row exists, creates one with `current_streak` and `longest_streak` set to 1.
 
 Response:
 
@@ -220,16 +259,36 @@ Current response:
 
 Status: not implemented.
 
+Current response:
+
+```json
+{
+  "detail": "Not implemented"
+}
+```
+
 ### POST `/streaks/{user_id}/penalty`
 
 Status: not implemented.
 
-## Manual API Test
+Current response:
 
-Run:
+```json
+{
+  "detail": "Not implemented"
+}
+```
+
+## Manual Smoke Test
+
+Run from the repository root while the FastAPI server is running:
 
 ```bash
 python3 backend/test_api.py
 ```
 
-Expected prerequisite: the FastAPI server is running and environment variables in `backend/.env` are valid.
+The test posts two valid natural-language event inputs and one empty input. A successful run prints:
+
+```text
+Summary: 3/3 passed
+```
