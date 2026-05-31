@@ -1,0 +1,33 @@
+name: daymap
+description: AI가 하루 일정을 자동으로 짜주는 앱
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # 네트워크
+  http: ^1.2.1
+
+  # 상태 관리
+  provider: ^6.1.2
+
+  # 푸시 알림
+  firebase_messaging: ^15.1.3
+  firebase_core: ^3.6.0
+
+  # 로컬 저장소
+  shared_preferences: ^2.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
