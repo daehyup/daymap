@@ -1,5 +1,7 @@
 from calendar import monthrange
+from collections import defaultdict
 from datetime import date, datetime, time, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from postgrest.exceptions import APIError
@@ -8,12 +10,15 @@ from models.schemas import (
     CalendarDayResponse,
     DayDetailResponse,
     EventResponse,
+    EventProgressResponse,
     GenerateScheduleResponse,
     MonthlyCalendarResponse,
     MonthlyPlanInput,
+    ProgressSummaryResponse,
+    RedistributeResponse,
     TaskResponse,
 )
-from services.ai_service import distribute_monthly_plan
+from services.ai_service import distribute_monthly_plan, redistribute_tasks
 from services.supabase_client import get_supabase
 
 router = APIRouter()
@@ -84,7 +89,11 @@ def _insert_tasks(db, payloads: list[dict]) -> list[dict]:
         if not _is_missing_column_error(exc):
             raise
         legacy_payloads = [
-            {key: value for key, value in payload.items() if key != "event_color"}
+            {
+                key: value
+                for key, value in payload.items()
+                if key not in {"event_color", "is_rescheduled"}
+            }
             for payload in payloads
         ]
         res = db.table("tasks").insert(legacy_payloads).execute()
@@ -249,3 +258,319 @@ def get_day_detail(user_id: str, date: date = Query(...)):
         tasks=[TaskResponse(**task) for task in tasks],
         summary=" · ".join(parts),
     )
+
+
+@router.post("/{user_id}/redistribute", response_model=RedistributeResponse)
+def redistribute_incomplete_tasks(user_id: str):
+    """
+    어제 이전 미완료 태스크를 이벤트별 마감일까지 AI 재배분.
+    앱 시작 시 또는 사용자가 '재배분' 버튼 탭 시 호출.
+    """
+    db = get_supabase()
+    today = datetime.now()
+    yesterday_end = datetime.combine(today.date(), time.min)
+
+    past_incomplete = (
+        db.table("tasks")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("is_completed", False)
+        .eq("is_rescheduled", False)
+        .lt("scheduled_at", yesterday_end.isoformat())
+        .execute()
+    ).data or []
+
+    if not past_incomplete:
+        return RedistributeResponse(
+            rescheduled_count=0,
+            new_tasks=[],
+            message="재배분할 미완료 태스크가 없습니다",
+        )
+
+    tasks_by_event: dict[str, list[dict]] = defaultdict(list)
+    for task in past_incomplete:
+        tasks_by_event[task.get("event_id") or "__no_event__"].append(task)
+
+    event_ids = [event_id for event_id in tasks_by_event if event_id != "__no_event__"]
+    events_data = {}
+    if event_ids:
+        events_res = (
+            db.table("events")
+            .select("id, end_date, title, color")
+            .in_("id", event_ids)
+            .execute()
+        )
+        for event in (events_res.data or []):
+            events_data[event["id"]] = event
+
+    future_tasks_res = (
+        db.table("tasks")
+        .select("scheduled_at, duration_minutes")
+        .eq("user_id", user_id)
+        .eq("is_completed", False)
+        .gte("scheduled_at", today.isoformat())
+        .execute()
+    )
+    existing_schedule: dict[str, int] = defaultdict(int)
+    for task in (future_tasks_res.data or []):
+        scheduled_date = datetime.fromisoformat(
+            str(task["scheduled_at"]).replace("Z", "+00:00")
+        ).strftime("%Y-%m-%d")
+        existing_schedule[scheduled_date] += int(task.get("duration_minutes") or 60)
+
+    all_new_tasks: list[dict] = []
+    old_task_ids: list[str] = []
+
+    for event_id, incomplete in tasks_by_event.items():
+        event = events_data.get(event_id, {})
+        deadline_str = event.get("end_date")
+
+        if deadline_str:
+            deadline = datetime.fromisoformat(str(deadline_str).replace("Z", "+00:00"))
+        else:
+            deadline = today + timedelta(days=14)
+
+        if deadline.date() <= today.date():
+            deadline = today + timedelta(days=3)
+
+        try:
+            ai_result = redistribute_tasks(
+                incomplete_tasks=incomplete,
+                existing_schedule=dict(existing_schedule),
+                today=today,
+                deadline=deadline,
+            )
+        except Exception:
+            continue
+
+        event_color = event.get("color", "green")
+        event_new_count = 0
+        for new_task in ai_result.get("tasks", []):
+            scheduled_at = new_task.get("scheduled_at")
+            if not scheduled_at:
+                continue
+
+            duration_minutes = int(new_task.get("duration_minutes") or 60)
+            all_new_tasks.append({
+                "user_id": user_id,
+                "event_id": event_id if event_id != "__no_event__" else None,
+                "title": str(new_task.get("title") or ""),
+                "scheduled_at": scheduled_at,
+                "duration_minutes": duration_minutes,
+                "is_completed": False,
+                "is_rescheduled": False,
+                "event_color": event_color,
+            })
+            event_new_count += 1
+
+            scheduled_date = datetime.fromisoformat(
+                str(scheduled_at).replace("Z", "+00:00")
+            ).strftime("%Y-%m-%d")
+            existing_schedule[scheduled_date] += duration_minutes
+
+        if event_new_count:
+            old_task_ids.extend([task["id"] for task in incomplete])
+
+    if not all_new_tasks:
+        return RedistributeResponse(
+            rescheduled_count=0,
+            new_tasks=[],
+            message="AI 재배분 결과가 없습니다",
+        )
+
+    if old_task_ids:
+        db.table("tasks").update({"is_rescheduled": True}).in_("id", old_task_ids).execute()
+
+    created = _insert_tasks(db, all_new_tasks)
+    count = len(created)
+    return RedistributeResponse(
+        rescheduled_count=count,
+        new_tasks=[TaskResponse(**task) for task in created],
+        message=f"{count}개 태스크를 재배분했습니다",
+    )
+
+
+@router.get("/{user_id}/progress", response_model=ProgressSummaryResponse)
+def get_progress(user_id: str):
+    """
+    사용자의 모든 활성 이벤트별 달성 가능성 피드백 카드 반환.
+    달력 화면 상단 카드 슬라이더에 사용.
+    """
+    db = get_supabase()
+    today = datetime.now().date()
+
+    events_res = (
+        db.table("events")
+        .select("*")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    events = events_res.data or []
+
+    if not events:
+        return ProgressSummaryResponse(cards=[], overall_completion_rate=0.0)
+
+    tasks_res = (
+        db.table("tasks")
+        .select("event_id, is_completed, scheduled_at, duration_minutes")
+        .eq("user_id", user_id)
+        .eq("is_rescheduled", False)
+        .execute()
+    )
+    all_tasks = tasks_res.data or []
+
+    tasks_by_event: dict[str, list[dict]] = defaultdict(list)
+    for task in all_tasks:
+        if task.get("event_id"):
+            tasks_by_event[task["event_id"]].append(task)
+
+    cards = []
+    total_completed = 0
+    total_tasks = 0
+
+    for event in events:
+        event_id = event["id"]
+        event_tasks = tasks_by_event.get(event_id, [])
+
+        if not event_tasks:
+            continue
+
+        task_total = len(event_tasks)
+        task_completed = sum(1 for task in event_tasks if task.get("is_completed") is True)
+        completion_rate = round((task_completed / task_total) * 100, 1) if task_total else 0.0
+
+        total_tasks += task_total
+        total_completed += task_completed
+
+        end_date_str = event.get("end_date")
+        deadline_date = None
+        days_until = None
+        if end_date_str:
+            deadline_date = datetime.fromisoformat(
+                str(end_date_str).replace("Z", "+00:00")
+            ).date()
+            days_until = (deadline_date - today).days
+
+        status, status_label, message = _calculate_status(
+            completion_rate=completion_rate,
+            days_until_deadline=days_until,
+            total_tasks=task_total,
+            completed_tasks=task_completed,
+            event_title=event.get("title", ""),
+            event_type=event.get("event_type", "goal"),
+        )
+
+        cards.append(EventProgressResponse(
+            event_id=event_id,
+            event_title=event.get("title", ""),
+            event_type=event.get("event_type", "goal"),
+            color=event.get("color", "green"),
+            deadline=deadline_date.isoformat() if deadline_date else None,
+            days_until_deadline=days_until,
+            total_tasks=task_total,
+            completed_tasks=task_completed,
+            completion_rate=completion_rate,
+            remaining_tasks=task_total - task_completed,
+            status=status,
+            status_label=status_label,
+            message=message,
+        ))
+
+    cards.sort(key=lambda card: (
+        0 if card.event_type == "deadline" else 1,
+        card.days_until_deadline if card.days_until_deadline is not None else 999,
+    ))
+
+    overall = round((total_completed / total_tasks) * 100, 1) if total_tasks else 0.0
+    return ProgressSummaryResponse(cards=cards, overall_completion_rate=overall)
+
+
+@router.get("/{user_id}/heatmap")
+def get_heatmap(user_id: str, year: int = Query(...)):
+    """
+    연간 날짜별 완료율 반환. Flutter 히트맵 화면에 사용.
+    """
+    db = get_supabase()
+    start = datetime(year, 1, 1)
+    end = datetime(year + 1, 1, 1)
+
+    res = (
+        db.table("tasks")
+        .select("scheduled_at, is_completed")
+        .eq("user_id", user_id)
+        .eq("is_rescheduled", False)
+        .gte("scheduled_at", start.isoformat())
+        .lt("scheduled_at", end.isoformat())
+        .execute()
+    )
+    tasks = res.data or []
+
+    daily: dict[str, dict] = defaultdict(lambda: {"total": 0, "completed": 0})
+    for task in tasks:
+        day = datetime.fromisoformat(
+            str(task["scheduled_at"]).replace("Z", "+00:00")
+        ).strftime("%Y-%m-%d")
+        daily[day]["total"] += 1
+        if task.get("is_completed"):
+            daily[day]["completed"] += 1
+
+    result = []
+    for date_str, counts in sorted(daily.items()):
+        total = counts["total"]
+        completed = counts["completed"]
+        rate = round((completed / total) * 100) if total else 0
+        level = 0 if total == 0 else (
+            4 if rate == 100 else
+            3 if rate >= 67 else
+            2 if rate >= 34 else 1
+        )
+        result.append({
+            "date": date_str,
+            "total": total,
+            "completed": completed,
+            "rate": rate,
+            "level": level,
+        })
+
+    return {"year": year, "days": result}
+
+
+def _calculate_status(
+    completion_rate: float,
+    days_until_deadline: Optional[int],
+    total_tasks: int,
+    completed_tasks: int,
+    event_title: str,
+    event_type: str,
+) -> tuple[str, str, str]:
+    remaining = total_tasks - completed_tasks
+
+    if event_type == "recurring":
+        return "on_track", "진행 중", f"매주 반복 · {completed_tasks}회 완료"
+
+    if days_until_deadline is None:
+        if completion_rate >= 80:
+            return "comfortable", "여유", f"전체의 {completion_rate:.0f}% 완료했어요"
+        if completion_rate >= 50:
+            return "on_track", "순조", f"절반 이상 완료 · 남은 {remaining}개"
+        return "warning", "주의", f"아직 {100 - completion_rate:.0f}% 남았어요"
+
+    if days_until_deadline <= 0:
+        if completion_rate >= 100:
+            return "comfortable", "완료", f"{event_title} 모두 완료했어요!"
+        return "critical", "마감", f"마감일이 지났어요 · {remaining}개 미완료"
+
+    if days_until_deadline <= 3:
+        if completion_rate >= 80:
+            return "on_track", "순조", f"D-{days_until_deadline} · 마지막 정리만 남았어요"
+        return "critical", "위험", f"D-{days_until_deadline} · 오늘 {min(remaining, 3)}개 이상 필요해요"
+
+    daily_required = remaining / days_until_deadline if days_until_deadline > 0 else remaining
+
+    if completion_rate >= 80:
+        return "comfortable", "여유", f"D-{days_until_deadline} · 지금 페이스면 충분해요"
+    if daily_required <= 2:
+        return "on_track", "순조", f"D-{days_until_deadline} · 하루 {daily_required:.0f}개씩 하면 됩니다"
+    if daily_required <= 4:
+        return "warning", "주의", f"D-{days_until_deadline} · 하루 {daily_required:.0f}개 필요해요"
+    return "critical", "위험", f"D-{days_until_deadline} · 오늘 집중이 필요합니다"

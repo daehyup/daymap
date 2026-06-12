@@ -1,4 +1,4 @@
-"""Manual API smoke tests for POST /events/."""
+"""Manual API smoke tests for Daymap backend endpoints."""
 
 import json
 import os
@@ -10,6 +10,7 @@ import requests
 BASE_URL = os.getenv("DAYMAP_API_URL", "http://127.0.0.1:8000")
 EVENTS_URL = f"{BASE_URL.rstrip('/')}/events/"
 TEST_USER_ID = os.getenv("DAYMAP_TEST_USER_ID", "test-user")
+SCHEDULE_URL = f"{BASE_URL.rstrip('/')}/schedule/{TEST_USER_ID}"
 
 TEST_CASES = [
     {
@@ -73,12 +74,57 @@ def run_test_case(test_case: dict[str, Any]) -> bool:
     return passed
 
 
+def run_get_progress_test() -> bool:
+    url = f"{SCHEDULE_URL}/progress"
+    print("=" * 72)
+    print("4. Progress cards")
+    print(f"GET {url}")
+
+    try:
+        response = requests.get(url, timeout=30)
+    except requests.RequestException as exc:
+        print("Result: REQUEST FAILED")
+        print(f"Error: {exc}")
+        return False
+
+    passed = response.status_code == 200
+    print(f"Status: {response.status_code}")
+    print(f"Result: {'PASS' if passed else 'FAIL'}")
+    print("Response:")
+    print(format_response_body(response))
+    return passed
+
+
+def run_redistribute_test() -> bool:
+    url = f"{SCHEDULE_URL}/redistribute"
+    print("=" * 72)
+    print("5. Redistribute incomplete tasks")
+    print(f"POST {url}")
+
+    try:
+        response = requests.post(url, timeout=90)
+    except requests.RequestException as exc:
+        print("Result: REQUEST FAILED")
+        print(f"Error: {exc}")
+        return False
+
+    passed = response.status_code == 200
+    print(f"Status: {response.status_code}")
+    print(f"Result: {'PASS' if passed else 'FAIL'}")
+    print("Response:")
+    print(format_response_body(response))
+    return passed
+
+
 def main() -> int:
     print("Daymap POST /events/ API smoke test")
     print(f"Base URL: {BASE_URL}")
 
-    passed_count = sum(run_test_case(test_case) for test_case in TEST_CASES)
-    total_count = len(TEST_CASES)
+    results = [run_test_case(test_case) for test_case in TEST_CASES]
+    results.append(run_get_progress_test())
+    results.append(run_redistribute_test())
+    passed_count = sum(results)
+    total_count = len(results)
     print("=" * 72)
     print(f"Summary: {passed_count}/{total_count} passed")
 

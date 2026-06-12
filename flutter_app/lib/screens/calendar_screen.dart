@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../widgets/progress_card.dart';
 import '../widgets/streak_widget.dart';
 import 'day_detail_screen.dart';
 
@@ -16,6 +17,7 @@ class CalendarScreen extends StatefulWidget {
 class _CalendarScreenState extends State<CalendarScreen> {
   late DateTime _visibleMonth;
   Map<String, dynamic>? _calendar;
+  List<Map<String, dynamic>> _progressCards = [];
   int _currentStreak = 0;
   bool _isLoading = true;
   String? _errorMessage;
@@ -25,7 +27,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
     super.initState();
     _visibleMonth =
         DateTime(widget.initialMonth.year, widget.initialMonth.month);
+    _autoRedistribute();
     _loadCalendar();
+  }
+
+  Future<void> _autoRedistribute() async {
+    try {
+      final result = await ApiService.redistributeTasks();
+      final count = result['rescheduled_count'] as int? ?? 0;
+      if (count > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('어제 못 한 $count개 할일을 자동으로 재배분했어요'),
+            backgroundColor: const Color(0xFF6C63FF),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _loadCalendar();
+      }
+    } catch (_) {
+      // 자동 재배분 실패는 조용히 무시
+    }
   }
 
   Future<void> _loadCalendar() async {
@@ -47,6 +69,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
         _calendar = results[0];
         _currentStreak = (results[1]['current_streak'] as num?)?.toInt() ?? 0;
       });
+
+      try {
+        final progress = await ApiService.getProgress();
+        if (!mounted) return;
+        setState(() {
+          _progressCards = List<Map<String, dynamic>>.from(
+            progress['cards'] as List? ?? [],
+          );
+        });
+      } catch (_) {
+        // 카드 로드 실패는 조용히 무시
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _errorMessage = '월간 일정을 불러오지 못했어요.');
@@ -118,6 +152,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
+          _buildProgressSection(),
+          if (_progressCards.isNotEmpty) const SizedBox(height: 18),
           const _WeekHeader(),
           const SizedBox(height: 8),
           _CalendarGrid(
@@ -128,6 +164,35 @@ class _CalendarScreenState extends State<CalendarScreen> {
           const SizedBox(height: 24),
           _MonthSummary(days: days),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProgressSection() {
+    if (_progressCards.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 150,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _progressCards.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          final card = _progressCards[index];
+          return ProgressCard(
+            eventTitle: card['event_title'] as String? ?? '',
+            eventType: card['event_type'] as String? ?? 'goal',
+            color: card['color'] as String? ?? 'green',
+            daysUntilDeadline: card['days_until_deadline'] as int?,
+            completionRate:
+                (card['completion_rate'] as num?)?.toDouble() ?? 0.0,
+            totalTasks: card['total_tasks'] as int? ?? 0,
+            completedTasks: card['completed_tasks'] as int? ?? 0,
+            status: card['status'] as String? ?? 'on_track',
+            statusLabel: card['status_label'] as String? ?? '순조',
+            message: card['message'] as String? ?? '',
+          );
+        },
       ),
     );
   }

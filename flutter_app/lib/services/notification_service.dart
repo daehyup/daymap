@@ -1,5 +1,9 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../app_keys.dart';
+import 'api_service.dart';
 
 // 백그라운드 메시지 핸들러 (top-level 함수여야 함)
 @pragma('vm:entry-point')
@@ -29,13 +33,32 @@ class NotificationService {
   }
 
   static void _handleForegroundMessage(RemoteMessage message) {
-    // TODO: 인앱 알림 UI 표시
+    final notification = message.notification;
+    if (notification == null) return;
+
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              notification.title ?? '',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            if (notification.body != null) Text(notification.body!),
+          ],
+        ),
+        duration: const Duration(seconds: 5),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   static Future<void> _saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('fcm_token', token);
-    // TODO: 서버에 토큰 등록
+    await ApiService.registerFcmToken(token);
   }
 
   static Future<String?> getToken() async {

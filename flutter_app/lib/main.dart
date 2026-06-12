@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 
+import 'app_keys.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
 
@@ -23,6 +24,7 @@ class DaymapApp extends StatelessWidget {
     return MaterialApp(
       title: 'Daymap',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF6C63FF),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'calendar_screen.dart';
+import 'heatmap_screen.dart';
 import 'input_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -30,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
         initialMonth: _calendarMonth,
       ),
       InputScreen(onSuccess: _handlePlanCreated),
+      const HeatmapScreen(),
     ];
 
     return Scaffold(
@@ -41,6 +43,8 @@ class _HomeScreenState extends State<HomeScreen> {
           NavigationDestination(icon: Icon(Icons.calendar_month), label: '달력'),
           NavigationDestination(
               icon: Icon(Icons.add_circle_outline), label: '일정 입력'),
+          NavigationDestination(
+              icon: Icon(Icons.bar_chart_outlined), label: '기록'),
         ],
       ),
     );

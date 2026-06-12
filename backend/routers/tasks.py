@@ -92,9 +92,3 @@ def complete_task(task_id: str):
             db.table("streaks").insert(insert_payload).execute()
 
     return TaskResponse(**task)
-
-
-@router.patch("/{task_id}/redistribute")
-async def redistribute_task(task_id: str):
-    # TODO: 미완료 태스크 AI 재배분
-    raise HTTPException(status_code=501, detail="Not implemented")

@@ -35,7 +35,10 @@ class _TodayScreenState extends State<TodayScreen> {
       if (!mounted) return;
       setState(() {
         _tasks = results[0] as List<Map<String, dynamic>>;
-        _currentStreak = ((results[1] as Map<String, dynamic>)['current_streak'] as num?)?.toInt() ?? 0;
+        _currentStreak =
+            ((results[1] as Map<String, dynamic>)['current_streak'] as num?)
+                    ?.toInt() ??
+                0;
       });
     } catch (e) {
       if (!mounted) return;
@@ -67,7 +70,8 @@ class _TodayScreenState extends State<TodayScreen> {
     }
   }
 
-  int get _completedCount => _tasks.where((t) => t['is_completed'] == true).length;
+  int get _completedCount =>
+      _tasks.where((t) => t['is_completed'] == true).length;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +92,9 @@ class _TodayScreenState extends State<TodayScreen> {
 
   Widget _buildBody() {
     if (_isLoading) return const _LoadingView();
-    if (_errorMessage != null) return _ErrorView(message: _errorMessage!, onRetry: _loadTasks);
+    if (_errorMessage != null) {
+      return _ErrorView(message: _errorMessage!, onRetry: _loadTasks);
+    }
     if (_tasks.isEmpty) return const _EmptyView();
 
     return RefreshIndicator(
@@ -145,7 +151,8 @@ class _ProgressHeader extends StatelessWidget {
             children: [
               Text(
                 completed == total && total > 0 ? '모든 일정 완료! 🎉' : '오늘의 진행 현황',
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
               ),
               Text(
                 '$completed / $total',
@@ -205,7 +212,8 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off_rounded, size: 56, color: Colors.grey.shade400),
+            Icon(Icons.cloud_off_rounded,
+                size: 56, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             Text(
               message,

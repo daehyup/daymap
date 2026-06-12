@@ -30,6 +30,7 @@ class TaskCreate(BaseModel):
     duration_minutes: int
     scheduled_at: datetime
     event_color: str = "green"
+    is_rescheduled: bool = False
 
 
 class TaskResponse(TaskCreate):
@@ -74,6 +75,33 @@ class DayDetailResponse(BaseModel):
 class GenerateScheduleResponse(BaseModel):
     events: list[EventResponse]
     total_tasks: int
+
+
+class RedistributeResponse(BaseModel):
+    rescheduled_count: int
+    new_tasks: list[TaskResponse]
+    message: str
+
+
+class EventProgressResponse(BaseModel):
+    event_id: str
+    event_title: str
+    event_type: str
+    color: str
+    deadline: Optional[str]
+    days_until_deadline: Optional[int]
+    total_tasks: int
+    completed_tasks: int
+    completion_rate: float
+    remaining_tasks: int
+    status: str
+    status_label: str
+    message: str
+
+
+class ProgressSummaryResponse(BaseModel):
+    cards: list[EventProgressResponse]
+    overall_completion_rate: float
 
 
 class StreakResponse(BaseModel):

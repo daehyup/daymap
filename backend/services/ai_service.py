@@ -139,6 +139,90 @@ def distribute_monthly_plan(raw_text: str, today: datetime, end_date: datetime) 
     return _sanitize_ai_result(result)
 
 
+_REDISTRIBUTE_PROMPT = """오늘 날짜: {today}
+이벤트 마감일: {deadline}
+남은 날짜: {days_remaining}일
+
+아래 미완료 태스크들을 오늘({today})부터 마감일({deadline}) 사이에 재배분해주세요.
+
+미완료 태스크:
+{incomplete_tasks}
+
+날짜별 이미 예약된 일정 (분 단위):
+{existing_schedule}
+
+재배분 규칙:
+- 오전 9시 ~ 오후 10시 사이에 배치
+- 하루 총 배치 시간은 기존 예약 포함 최대 240분
+- 마감에 가까울수록 하루 할당량 늘리기
+- 마감 3일 전부터: 복습/정리 위주 태스크로 제목 수정 가능
+- 기존 예약된 시간대와 겹치지 않게
+
+반드시 아래 JSON 형식으로만 반환:
+{{
+  "tasks": [
+    {{
+      "original_task_id": "원본_task_id",
+      "title": "할일 제목",
+      "scheduled_at": "YYYY-MM-DDTHH:MM:SS",
+      "duration_minutes": 60
+    }}
+  ]
+}}"""
+
+
+def redistribute_tasks(
+    incomplete_tasks: list[dict],
+    existing_schedule: dict[str, int],
+    today: datetime,
+    deadline: datetime,
+) -> dict:
+    """
+    미완료 태스크들을 today ~ deadline 사이에 AI로 재배분.
+    Returns: {"tasks": [{"original_task_id", "title", "scheduled_at", "duration_minutes"}]}
+    """
+    days_remaining = (deadline.date() - today.date()).days
+
+    tasks_text = "\n".join(
+        f"- [{task['id']}] {task['title']} ({task['duration_minutes']}분)"
+        for task in incomplete_tasks
+    )
+    schedule_text = "\n".join(
+        f"- {date}: {minutes}분 예약됨"
+        for date, minutes in existing_schedule.items()
+    ) or "없음"
+
+    prompt = _REDISTRIBUTE_PROMPT.format(
+        today=today.strftime("%Y-%m-%d"),
+        deadline=deadline.strftime("%Y-%m-%d"),
+        days_remaining=days_remaining,
+        incomplete_tasks=tasks_text,
+        existing_schedule=schedule_text,
+    )
+
+    response = _get_client().chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        response_format={"type": "json_object"},
+        messages=[
+            {
+                "role": "system",
+                "content": "당신은 한국어 일정 플래너입니다. 모든 출력 텍스트는 반드시 자연스러운 한국어로만 작성합니다.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    )
+
+    try:
+        result = json.loads(response.choices[0].message.content)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"AI 재배분 응답 파싱 실패: {e}")
+
+    if "tasks" not in result:
+        raise ValueError("AI 재배분 응답에 tasks 필드가 없습니다")
+
+    return result
+
+
 def distribute_tasks(raw_text: str, today: datetime) -> dict:
     """기존 /events API 호환용 래퍼."""
     result = distribute_monthly_plan(raw_text, today, today)

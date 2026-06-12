@@ -34,6 +34,12 @@ cd backend
 uvicorn main:app --reload
 ```
 
+Railway starts the service with `backend/Procfile`:
+
+```text
+web: uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
 Default base URL:
 
 ```text
@@ -50,6 +56,9 @@ http://127.0.0.1:8000
   "title": "시험 준비",
   "description": "정보처리기사 실기 7월 20일",
   "scheduled_at": "2026-06-01T10:00:00",
+  "event_type": "deadline",
+  "color": "red",
+  "end_date": "2026-06-25T18:00:00",
   "id": "event-id",
   "created_at": "2026-06-01T10:00:00"
 }
@@ -64,6 +73,8 @@ http://127.0.0.1:8000
   "title": "정보처리기사 실기 공부",
   "duration_minutes": 60,
   "scheduled_at": "2026-06-02T09:00:00",
+  "event_color": "red",
+  "is_rescheduled": false,
   "id": "task-id",
   "is_completed": false,
   "completed_at": null,
@@ -241,15 +252,101 @@ Errors:
 
 - `404`: task not found
 
-### PATCH `/tasks/{task_id}/redistribute`
+## Schedule
 
-Status: not implemented.
+### POST `/schedule/generate`
 
-Current response:
+Creates a monthly AI plan from natural-language input.
+
+Request body:
 
 ```json
 {
-  "detail": "Not implemented"
+  "user_id": "test-user",
+  "raw_text": "기말고사 6월 25일",
+  "plan_year": 2026,
+  "plan_month": 6
+}
+```
+
+Response:
+
+```json
+{
+  "events": [],
+  "total_tasks": 12
+}
+```
+
+### GET `/schedule/{user_id}/month?year=2026&month=6`
+
+Returns calendar days and events for the requested month.
+
+### GET `/schedule/{user_id}/day?date=2026-06-13`
+
+Returns tasks and a short summary for one day.
+
+### POST `/schedule/{user_id}/redistribute`
+
+Moves unfinished tasks scheduled before today into new AI-generated future task slots, grouped by event deadline. Old past tasks are marked with `is_rescheduled=true`.
+
+Response:
+
+```json
+{
+  "rescheduled_count": 3,
+  "new_tasks": [],
+  "message": "3개 태스크를 재배분했습니다"
+}
+```
+
+### GET `/schedule/{user_id}/progress`
+
+Returns event-level progress cards for the calendar screen.
+
+Response:
+
+```json
+{
+  "cards": [
+    {
+      "event_id": "event-id",
+      "event_title": "기말고사",
+      "event_type": "deadline",
+      "color": "red",
+      "deadline": "2026-06-25",
+      "days_until_deadline": 12,
+      "total_tasks": 10,
+      "completed_tasks": 4,
+      "completion_rate": 40.0,
+      "remaining_tasks": 6,
+      "status": "warning",
+      "status_label": "주의",
+      "message": "D-12 · 하루 1개씩 하면 됩니다"
+    }
+  ],
+  "overall_completion_rate": 40.0
+}
+```
+
+### GET `/schedule/{user_id}/heatmap?year=2026`
+
+Returns daily completion levels for the annual activity heatmap.
+
+Response:
+
+```json
+{
+  "year": 2026,
+  "days": [
+    {
+      "date": "2026-06-13",
+      "total": 4,
+      "completed": 3,
+      "rate": 75,
+      "level": 3
+    }
+  ]
 }
 ```
 
@@ -257,13 +354,15 @@ Current response:
 
 ### GET `/streaks/{user_id}`
 
-Status: not implemented.
-
-Current response:
+Returns streak and XP state. If no row exists yet, returns zeros.
 
 ```json
 {
-  "detail": "Not implemented"
+  "user_id": "test-user",
+  "current_streak": 0,
+  "longest_streak": 0,
+  "total_xp": 0,
+  "last_completed_at": null
 }
 ```
 
@@ -275,8 +374,51 @@ Current response:
 
 ```json
 {
-  "detail": "Not implemented"
+  "message": "페널티 적용 완료: 스트릭 초기화"
 }
+```
+
+## Users
+
+### POST `/users/{user_id}/fcm-token`
+
+Registers or updates a user's FCM token.
+
+Request body:
+
+```json
+{
+  "fcm_token": "firebase-token"
+}
+```
+
+Response:
+
+```json
+{
+  "message": "FCM 토큰 등록 완료"
+}
+```
+
+## Database Migration
+
+Run these statements in Supabase SQL Editor:
+
+```sql
+ALTER TABLE events ADD COLUMN IF NOT EXISTS event_type text DEFAULT 'goal';
+ALTER TABLE events ADD COLUMN IF NOT EXISTS color text DEFAULT 'green';
+ALTER TABLE events ADD COLUMN IF NOT EXISTS end_date timestamptz;
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS event_color text DEFAULT 'green';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_rescheduled boolean DEFAULT false;
+
+ALTER TABLE streaks ADD COLUMN IF NOT EXISTS last_completed_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id text PRIMARY KEY,
+    fcm_token text,
+    updated_at timestamptz DEFAULT now()
+);
 ```
 
 ## Manual Smoke Test
@@ -285,6 +427,12 @@ Run from the repository root while the FastAPI server is running:
 
 ```bash
 python3 backend/test_api.py
+```
+
+For a deployed API:
+
+```bash
+DAYMAP_API_URL=https://your-railway-url python3 backend/test_api.py
 ```
 
 The test posts two valid natural-language event inputs and one empty input. A successful run prints:
