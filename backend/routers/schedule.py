@@ -1,6 +1,6 @@
 from calendar import monthrange
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -25,23 +25,31 @@ router = APIRouter()
 
 EVENT_TYPES = {"deadline", "recurring", "goal"}
 EVENT_COLORS = {"red", "blue", "green", "orange"}
+KST = timezone(timedelta(hours=9))
 
 
 def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
     if month < 1 or month > 12:
         raise HTTPException(status_code=422, detail="month는 1~12 사이여야 합니다.")
-    start = datetime(year, month, 1)
+    start = datetime(year, month, 1, tzinfo=KST)
     if month == 12:
-        end = datetime(year + 1, 1, 1)
+        end = datetime(year + 1, 1, 1, tzinfo=KST)
     else:
-        end = datetime(year, month + 1, 1)
+        end = datetime(year, month + 1, 1, tzinfo=KST)
     return start, end
 
 
 def _date_bounds(raw_date: date) -> tuple[datetime, datetime]:
-    start = datetime.combine(raw_date, time.min)
+    start = datetime(raw_date.year, raw_date.month, raw_date.day, tzinfo=KST)
     end = start + timedelta(days=1)
     return start, end
+
+
+def _parse_datetime(value: object) -> datetime:
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=KST)
+    return parsed.astimezone(KST)
 
 
 def _safe_event_type(value: str | None) -> str:
@@ -118,7 +126,7 @@ def generate_schedule(payload: MonthlyPlanInput):
         raise HTTPException(status_code=422, detail="일정을 입력해주세요.")
 
     start_of_month, start_of_next_month = _month_bounds(payload.plan_year, payload.plan_month)
-    today = datetime.now()
+    today = datetime.now(KST)
     end_date = start_of_next_month - timedelta(seconds=1)
 
     try:
@@ -134,7 +142,7 @@ def generate_schedule(payload: MonthlyPlanInput):
         normalized = _normalize_event(raw_event, index)
         raw_tasks = normalized["tasks"]
         task_dates = [
-            datetime.fromisoformat(str(task["scheduled_at"]).replace("Z", "+00:00"))
+            _parse_datetime(task["scheduled_at"])
             for task in raw_tasks
             if task.get("scheduled_at")
         ]
@@ -205,7 +213,7 @@ def get_monthly_calendar(user_id: str, year: int = Query(...), month: int = Quer
         current = date(year, month, day)
         current_tasks = [
             task for task in tasks
-            if datetime.fromisoformat(str(task["scheduled_at"]).replace("Z", "+00:00")).date() == current
+            if _parse_datetime(task["scheduled_at"]).date() == current
         ]
         task_events = [event_by_id.get(task.get("event_id"), {}) for task in current_tasks]
         days.append(
@@ -267,8 +275,8 @@ def redistribute_incomplete_tasks(user_id: str):
     앱 시작 시 또는 사용자가 '재배분' 버튼 탭 시 호출.
     """
     db = get_supabase()
-    today = datetime.now()
-    yesterday_end = datetime.combine(today.date(), time.min)
+    today = datetime.now(KST)
+    yesterday_end = datetime(today.year, today.month, today.day, tzinfo=KST)
 
     past_incomplete = (
         db.table("tasks")
@@ -313,9 +321,7 @@ def redistribute_incomplete_tasks(user_id: str):
     )
     existing_schedule: dict[str, int] = defaultdict(int)
     for task in (future_tasks_res.data or []):
-        scheduled_date = datetime.fromisoformat(
-            str(task["scheduled_at"]).replace("Z", "+00:00")
-        ).strftime("%Y-%m-%d")
+        scheduled_date = _parse_datetime(task["scheduled_at"]).strftime("%Y-%m-%d")
         existing_schedule[scheduled_date] += int(task.get("duration_minutes") or 60)
 
     all_new_tasks: list[dict] = []
@@ -326,7 +332,7 @@ def redistribute_incomplete_tasks(user_id: str):
         deadline_str = event.get("end_date")
 
         if deadline_str:
-            deadline = datetime.fromisoformat(str(deadline_str).replace("Z", "+00:00"))
+            deadline = _parse_datetime(deadline_str)
         else:
             deadline = today + timedelta(days=14)
 
@@ -363,9 +369,7 @@ def redistribute_incomplete_tasks(user_id: str):
             })
             event_new_count += 1
 
-            scheduled_date = datetime.fromisoformat(
-                str(scheduled_at).replace("Z", "+00:00")
-            ).strftime("%Y-%m-%d")
+            scheduled_date = _parse_datetime(scheduled_at).strftime("%Y-%m-%d")
             existing_schedule[scheduled_date] += duration_minutes
 
         if event_new_count:
@@ -397,7 +401,7 @@ def get_progress(user_id: str):
     달력 화면 상단 카드 슬라이더에 사용.
     """
     db = get_supabase()
-    today = datetime.now().date()
+    today = datetime.now(KST).date()
 
     events_res = (
         db.table("events")
@@ -446,9 +450,7 @@ def get_progress(user_id: str):
         deadline_date = None
         days_until = None
         if end_date_str:
-            deadline_date = datetime.fromisoformat(
-                str(end_date_str).replace("Z", "+00:00")
-            ).date()
+            deadline_date = _parse_datetime(end_date_str).date()
             days_until = (deadline_date - today).days
 
         status, status_label, message = _calculate_status(
@@ -491,8 +493,8 @@ def get_heatmap(user_id: str, year: int = Query(...)):
     연간 날짜별 완료율 반환. Flutter 히트맵 화면에 사용.
     """
     db = get_supabase()
-    start = datetime(year, 1, 1)
-    end = datetime(year + 1, 1, 1)
+    start = datetime(year, 1, 1, tzinfo=KST)
+    end = datetime(year + 1, 1, 1, tzinfo=KST)
 
     res = (
         db.table("tasks")
@@ -507,9 +509,7 @@ def get_heatmap(user_id: str, year: int = Query(...)):
 
     daily: dict[str, dict] = defaultdict(lambda: {"total": 0, "completed": 0})
     for task in tasks:
-        day = datetime.fromisoformat(
-            str(task["scheduled_at"]).replace("Z", "+00:00")
-        ).strftime("%Y-%m-%d")
+        day = _parse_datetime(task["scheduled_at"]).strftime("%Y-%m-%d")
         daily[day]["total"] += 1
         if task.get("is_completed"):
             daily[day]["completed"] += 1

@@ -1,8 +1,10 @@
 import os
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from groq import Groq
+
+KST = timezone(timedelta(hours=9))
 
 _client: Groq | None = None
 
@@ -42,6 +44,7 @@ _PROMPT_TEMPLATE = """오늘 날짜: {today}
    - 오전 9시 ~ 오후 10시 사이
    - 반복 일정(알바 등)은 시간 명시 없으면 오후 2시~6시로 가정
    - 하루 최대 학습/준비 시간: 3~4시간
+   - scheduled_at은 반드시 한국 시간(KST, UTC+9) 기준으로 작성하고 "+09:00" suffix를 붙인다
 
 4. 일정 유형 구분:
    - type "deadline": 시험, 제출, 마감 등
@@ -58,7 +61,7 @@ _PROMPT_TEMPLATE = """오늘 날짜: {today}
       "tasks": [
         {{
           "title": "구체적 할일",
-          "scheduled_at": "YYYY-MM-DDTHH:MM:SS",
+          "scheduled_at": "YYYY-MM-DDTHH:MM:SS+09:00",
           "duration_minutes": 60,
           "event_index": 0
         }}
@@ -97,11 +100,28 @@ def _sanitize_korean_text(value: object, fallback: str) -> str:
     return text or fallback
 
 
+def _normalize_kst_datetime(value: object) -> str | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return str(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=KST)
+    else:
+        parsed = parsed.astimezone(KST)
+    return parsed.isoformat(timespec="seconds")
+
+
 def _sanitize_ai_result(result: dict) -> dict:
     for event in result.get("events", []):
         event["title"] = _sanitize_korean_text(event.get("title"), "일정")
         for task in event.get("tasks", []):
             task["title"] = _sanitize_korean_text(task.get("title"), event["title"])
+            normalized_at = _normalize_kst_datetime(task.get("scheduled_at"))
+            if normalized_at:
+                task["scheduled_at"] = normalized_at
     return result
 
 
@@ -157,6 +177,7 @@ _REDISTRIBUTE_PROMPT = """오늘 날짜: {today}
 - 마감에 가까울수록 하루 할당량 늘리기
 - 마감 3일 전부터: 복습/정리 위주 태스크로 제목 수정 가능
 - 기존 예약된 시간대와 겹치지 않게
+- scheduled_at은 반드시 한국 시간(KST, UTC+9) 기준으로 작성하고 "+09:00" suffix를 붙인다
 
 반드시 아래 JSON 형식으로만 반환:
 {{
@@ -164,7 +185,7 @@ _REDISTRIBUTE_PROMPT = """오늘 날짜: {today}
     {{
       "original_task_id": "원본_task_id",
       "title": "할일 제목",
-      "scheduled_at": "YYYY-MM-DDTHH:MM:SS",
+      "scheduled_at": "YYYY-MM-DDTHH:MM:SS+09:00",
       "duration_minutes": 60
     }}
   ]
@@ -219,6 +240,11 @@ def redistribute_tasks(
 
     if "tasks" not in result:
         raise ValueError("AI 재배분 응답에 tasks 필드가 없습니다")
+
+    for task in result.get("tasks", []):
+        normalized_at = _normalize_kst_datetime(task.get("scheduled_at"))
+        if normalized_at:
+            task["scheduled_at"] = normalized_at
 
     return result
 

@@ -1,3 +1,9 @@
 .env
 venv/
 .venv/
+CLAUDE.md
+CLAUDE_HANDOFF.md
+CODEX_TASKS.md
+claude.md
+claude_handoff.md
+codex_tasks.md

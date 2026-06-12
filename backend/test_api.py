@@ -2,6 +2,7 @@
 
 import json
 import os
+import uuid
 from typing import Any
 
 import requests
@@ -9,7 +10,7 @@ import requests
 
 BASE_URL = os.getenv("DAYMAP_API_URL", "http://127.0.0.1:8000")
 EVENTS_URL = f"{BASE_URL.rstrip('/')}/events/"
-TEST_USER_ID = os.getenv("DAYMAP_TEST_USER_ID", "test-user")
+TEST_USER_ID = os.getenv("DAYMAP_TEST_USER_ID", f"test-{uuid.uuid4().hex[:8]}")
 SCHEDULE_URL = f"{BASE_URL.rstrip('/')}/schedule/{TEST_USER_ID}"
 
 TEST_CASES = [
@@ -116,9 +117,32 @@ def run_redistribute_test() -> bool:
     return passed
 
 
+def cleanup_test_data() -> None:
+    """테스트에서 생성된 데이터 삭제."""
+    print("=" * 72)
+    print("Cleanup: 테스트 데이터 삭제")
+
+    if not TEST_USER_ID.startswith("test-"):
+        print(f"Result: user_id={TEST_USER_ID}는 자동 정리 대상이 아니어서 건너뜀")
+        return
+
+    try:
+        response = requests.get(f"{BASE_URL.rstrip('/')}/events/{TEST_USER_ID}", timeout=10)
+        if response.status_code == 200:
+            events = response.json() if isinstance(response.json(), list) else []
+            for event in events:
+                event_id = event.get("id")
+                if event_id:
+                    requests.delete(f"{BASE_URL.rstrip('/')}/events/{event_id}", timeout=10)
+        print(f"Result: user_id={TEST_USER_ID} 데이터 정리 완료")
+    except Exception as exc:
+        print(f"Cleanup 실패 (무시): {exc}")
+
+
 def main() -> int:
     print("Daymap POST /events/ API smoke test")
     print(f"Base URL: {BASE_URL}")
+    print(f"Test user_id: {TEST_USER_ID}")
 
     results = [run_test_case(test_case) for test_case in TEST_CASES]
     results.append(run_get_progress_test())
@@ -128,6 +152,7 @@ def main() -> int:
     print("=" * 72)
     print(f"Summary: {passed_count}/{total_count} passed")
 
+    cleanup_test_data()
     return 0 if passed_count == total_count else 1
 
 

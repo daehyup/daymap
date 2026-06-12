@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 
 from models.schemas import (
@@ -11,6 +11,7 @@ from services.supabase_client import get_supabase
 from services.ai_service import distribute_tasks
 
 router = APIRouter()
+KST = timezone(timedelta(hours=9))
 
 
 @router.post("/", response_model=EventWithTasksResponse)
@@ -19,7 +20,7 @@ def create_event(payload: EventTextInput):
         raise HTTPException(status_code=422, detail="일정을 입력해주세요.")
 
     db = get_supabase()
-    today = datetime.now()
+    today = datetime.now(KST)
 
     # 1. Groq로 날짜별 할일 배분
     try:

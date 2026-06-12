@@ -25,6 +25,7 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-supabase-service-role-key
 GROQ_API_KEY=your-groq-api-key
 FCM_SERVER_KEY=your-firebase-server-key
+ALLOWED_ORIGINS=*
 ```
 
 Run the API locally:
@@ -55,7 +56,7 @@ http://127.0.0.1:8000
   "user_id": "test-user",
   "title": "시험 준비",
   "description": "정보처리기사 실기 7월 20일",
-  "scheduled_at": "2026-06-01T10:00:00",
+  "scheduled_at": "2026-06-01T10:00:00+09:00",
   "event_type": "deadline",
   "color": "red",
   "end_date": "2026-06-25T18:00:00",
@@ -72,7 +73,7 @@ http://127.0.0.1:8000
   "event_id": "event-id",
   "title": "정보처리기사 실기 공부",
   "duration_minutes": 60,
-  "scheduled_at": "2026-06-02T09:00:00",
+  "scheduled_at": "2026-06-02T09:00:00+09:00",
   "event_color": "red",
   "is_rescheduled": false,
   "id": "task-id",
@@ -90,7 +91,7 @@ http://127.0.0.1:8000
   "current_streak": 1,
   "longest_streak": 1,
   "total_xp": 10,
-  "last_completed_at": "2026-06-01T15:00:00+00:00"
+  "last_completed_at": "2026-06-01T15:00:00+09:00"
 }
 ```
 
@@ -131,7 +132,7 @@ Success response:
     "user_id": "test-user",
     "title": "시험 준비",
     "description": "정보처리기사 실기 7월 20일, 기말고사 6월 25일",
-    "scheduled_at": "2026-06-01T10:00:00",
+    "scheduled_at": "2026-06-01T10:00:00+09:00",
     "id": "event-id",
     "created_at": "2026-06-01T10:00:00"
   },
@@ -141,7 +142,7 @@ Success response:
       "event_id": "event-id",
       "title": "정보처리기사 실기 공부",
       "duration_minutes": 60,
-      "scheduled_at": "2026-06-02T09:00:00",
+      "scheduled_at": "2026-06-02T09:00:00+09:00",
       "id": "task-id",
       "is_completed": false,
       "completed_at": null,
@@ -169,7 +170,7 @@ Response:
     "user_id": "test-user",
     "title": "시험 준비",
     "description": "정보처리기사 실기 7월 20일",
-    "scheduled_at": "2026-06-01T10:00:00",
+    "scheduled_at": "2026-06-01T10:00:00+09:00",
     "id": "event-id",
     "created_at": "2026-06-01T10:00:00"
   }
@@ -208,7 +209,7 @@ Current response:
 
 ### GET `/tasks/{user_id}/today`
 
-Returns today's tasks for a user, filtered by `scheduled_at` from local start of day through start of tomorrow, sorted by `scheduled_at` ascending.
+Returns today's tasks for a user, filtered by KST start of day through KST start of tomorrow, sorted by `scheduled_at` ascending.
 
 Response:
 
@@ -219,7 +220,7 @@ Response:
     "event_id": "event-id",
     "title": "기말고사 공부",
     "duration_minutes": 60,
-    "scheduled_at": "2026-06-01T14:00:00",
+    "scheduled_at": "2026-06-01T14:00:00+09:00",
     "id": "task-id",
     "is_completed": false,
     "completed_at": null,
@@ -230,7 +231,7 @@ Response:
 
 ### PATCH `/tasks/{task_id}/complete`
 
-Marks a task as completed and sets `completed_at` to the current UTC timestamp. Adds 10 XP to the user's `streaks.total_xp`; if no streak row exists, creates one with `current_streak` and `longest_streak` set to 1.
+Marks a task as completed and sets `completed_at` to the current KST timestamp. Adds 10 XP and recalculates the user's streak by KST calendar day.
 
 Response:
 
@@ -240,10 +241,10 @@ Response:
   "event_id": "event-id",
   "title": "기말고사 공부",
   "duration_minutes": 60,
-  "scheduled_at": "2026-06-01T14:00:00",
+  "scheduled_at": "2026-06-01T14:00:00+09:00",
   "id": "task-id",
   "is_completed": true,
-  "completed_at": "2026-06-01T15:00:00+00:00",
+  "completed_at": "2026-06-01T15:00:00+09:00",
   "created_at": "2026-06-01T10:00:00"
 }
 ```
@@ -368,9 +369,7 @@ Returns streak and XP state. If no row exists yet, returns zeros.
 
 ### POST `/streaks/{user_id}/penalty`
 
-Status: not implemented.
-
-Current response:
+Resets `current_streak` to zero.
 
 ```json
 {
@@ -421,6 +420,33 @@ CREATE TABLE IF NOT EXISTS users (
 );
 ```
 
+To enable RLS and block direct anon/authenticated table access, run:
+
+```sql
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE streaks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+```
+
+The same RLS statements are stored in `backend/migrations/004_rls.sql`.
+
+## CORS
+
+Allowed origins are configured with `ALLOWED_ORIGINS`.
+
+Local default:
+
+```bash
+ALLOWED_ORIGINS=*
+```
+
+Railway example:
+
+```bash
+ALLOWED_ORIGINS=https://daymap-backend-production.up.railway.app
+```
+
 ## Manual Smoke Test
 
 Run from the repository root while the FastAPI server is running:
@@ -435,8 +461,8 @@ For a deployed API:
 DAYMAP_API_URL=https://your-railway-url python3 backend/test_api.py
 ```
 
-The test posts two valid natural-language event inputs and one empty input. A successful run prints:
+By default, the smoke test uses a random `test-...` user id and deletes generated events at the end. A successful run prints:
 
 ```text
-Summary: 3/3 passed
+Summary: 5/5 passed
 ```
