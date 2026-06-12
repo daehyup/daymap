@@ -5,6 +5,8 @@ class TaskCard extends StatefulWidget {
   final String time;
   final bool isDone;
   final VoidCallback? onToggle;
+  final String eventColor;
+  final int durationMinutes;
 
   const TaskCard({
     super.key,
@@ -12,13 +14,16 @@ class TaskCard extends StatefulWidget {
     required this.time,
     required this.isDone,
     this.onToggle,
+    this.eventColor = 'green',
+    this.durationMinutes = 0,
   });
 
   @override
   State<TaskCard> createState() => _TaskCardState();
 }
 
-class _TaskCardState extends State<TaskCard> with SingleTickerProviderStateMixin {
+class _TaskCardState extends State<TaskCard>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _scaleAnim;
 
@@ -59,45 +64,89 @@ class _TaskCardState extends State<TaskCard> with SingleTickerProviderStateMixin
       margin: const EdgeInsets.only(bottom: 12),
       child: Card(
         elevation: widget.isDone ? 0 : 2,
-        color: widget.isDone ? colors.surfaceContainerHighest.withOpacity(0.5) : null,
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          leading: GestureDetector(
-            onTap: widget.onToggle,
-            child: ScaleTransition(
-              scale: _scaleAnim,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.isDone ? colors.primary : Colors.transparent,
-                  border: Border.all(
-                    color: widget.isDone ? colors.primary : Colors.grey.shade400,
-                    width: 2,
+        color: widget.isDone
+            ? colors.surfaceContainerHighest.withValues(alpha: 0.5)
+            : null,
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          children: [
+            Container(width: 4, height: 76, color: _eventColor()),
+            Expanded(
+              child: ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                leading: GestureDetector(
+                  onTap: widget.onToggle,
+                  child: ScaleTransition(
+                    scale: _scaleAnim,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color:
+                            widget.isDone ? colors.primary : Colors.transparent,
+                        border: Border.all(
+                          color: widget.isDone
+                              ? colors.primary
+                              : Colors.grey.shade400,
+                          width: 2,
+                        ),
+                      ),
+                      child: widget.isDone
+                          ? const Icon(Icons.check,
+                              size: 16, color: Colors.white)
+                          : null,
+                    ),
                   ),
                 ),
-                child: widget.isDone
-                    ? const Icon(Icons.check, size: 16, color: Colors.white)
-                    : null,
+                title: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 200),
+                  style: TextStyle(
+                    decoration:
+                        widget.isDone ? TextDecoration.lineThrough : null,
+                    color: widget.isDone
+                        ? Colors.grey.shade500
+                        : Theme.of(context).textTheme.bodyLarge?.color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  child: Text(widget.title),
+                ),
+                subtitle: Text(
+                  [
+                    if (widget.time.isNotEmpty) _formatTime(widget.time),
+                    if (widget.durationMinutes > 0)
+                      _formatDuration(widget.durationMinutes),
+                  ].join(' · '),
+                  style: const TextStyle(fontSize: 12),
+                ),
               ),
             ),
-          ),
-          title: AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 200),
-            style: TextStyle(
-              decoration: widget.isDone ? TextDecoration.lineThrough : null,
-              color: widget.isDone ? Colors.grey.shade500 : Theme.of(context).textTheme.bodyLarge?.color,
-            ),
-            child: Text(widget.title),
-          ),
-          subtitle: widget.time.isNotEmpty
-              ? Text(_formatTime(widget.time), style: const TextStyle(fontSize: 12))
-              : null,
+          ],
         ),
       ),
     );
+  }
+
+  Color _eventColor() {
+    switch (widget.eventColor) {
+      case 'red':
+        return const Color(0xFFE5484D);
+      case 'blue':
+        return const Color(0xFF3772FF);
+      case 'orange':
+        return const Color(0xFFF59E0B);
+      case 'green':
+      default:
+        return const Color(0xFF22A06B);
+    }
+  }
+
+  String _formatDuration(int minutes) {
+    if (minutes >= 60 && minutes % 60 == 0) return '${minutes ~/ 60}시간';
+    if (minutes > 60) return '${minutes ~/ 60}시간 ${minutes % 60}분';
+    return '$minutes분';
   }
 
   String _formatTime(String rawTime) {

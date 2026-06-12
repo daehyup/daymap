@@ -1,12 +1,18 @@
 from datetime import datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
+from postgrest.exceptions import APIError
 from models.schemas import TaskCreate, TaskResponse
 from services.supabase_client import get_supabase
 
 XP_PER_COMPLETION = 10
 
 router = APIRouter()
+
+
+def _is_missing_column_error(exc: APIError) -> bool:
+    message = str(exc)
+    return "PGRST204" in message or "schema cache" in message or "Could not find" in message
 
 
 @router.post("/", response_model=TaskResponse)
@@ -58,18 +64,32 @@ def complete_task(task_id: str):
 
     if streak_res.data:
         current_xp = streak_res.data[0]["total_xp"]
-        db.table("streaks").update({
+        update_payload = {
             "total_xp": current_xp + XP_PER_COMPLETION,
             "last_completed_at": now,
-        }).eq("user_id", user_id).execute()
+        }
+        try:
+            db.table("streaks").update(update_payload).eq("user_id", user_id).execute()
+        except APIError as exc:
+            if not _is_missing_column_error(exc):
+                raise
+            update_payload.pop("last_completed_at", None)
+            db.table("streaks").update(update_payload).eq("user_id", user_id).execute()
     else:
-        db.table("streaks").insert({
+        insert_payload = {
             "user_id": user_id,
             "total_xp": XP_PER_COMPLETION,
             "current_streak": 1,
             "longest_streak": 1,
             "last_completed_at": now,
-        }).execute()
+        }
+        try:
+            db.table("streaks").insert(insert_payload).execute()
+        except APIError as exc:
+            if not _is_missing_column_error(exc):
+                raise
+            insert_payload.pop("last_completed_at", None)
+            db.table("streaks").insert(insert_payload).execute()
 
     return TaskResponse(**task)
 

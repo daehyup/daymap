@@ -13,6 +13,9 @@ class EventCreate(BaseModel):
     title: str
     description: Optional[str] = None
     scheduled_at: datetime
+    event_type: str = "goal"
+    color: str = "green"
+    end_date: Optional[datetime] = None
 
 
 class EventResponse(EventCreate):
@@ -26,6 +29,7 @@ class TaskCreate(BaseModel):
     title: str
     duration_minutes: int
     scheduled_at: datetime
+    event_color: str = "green"
 
 
 class TaskResponse(TaskCreate):
@@ -38,6 +42,38 @@ class TaskResponse(TaskCreate):
 class EventWithTasksResponse(BaseModel):
     event: EventResponse
     tasks: list[TaskResponse]
+
+
+class MonthlyPlanInput(BaseModel):
+    user_id: str
+    raw_text: str
+    plan_year: int
+    plan_month: int
+
+
+class CalendarDayResponse(BaseModel):
+    date: str
+    tasks: list[TaskResponse]
+    has_deadline: bool
+    has_recurring: bool
+
+
+class MonthlyCalendarResponse(BaseModel):
+    year: int
+    month: int
+    days: list[CalendarDayResponse]
+    events: list[EventResponse]
+
+
+class DayDetailResponse(BaseModel):
+    date: str
+    tasks: list[TaskResponse]
+    summary: str
+
+
+class GenerateScheduleResponse(BaseModel):
+    events: list[EventResponse]
+    total_tasks: int
 
 
 class StreakResponse(BaseModel):

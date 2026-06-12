@@ -14,9 +14,64 @@ class ApiService {
     );
 
     if (response.statusCode == 200 || response.statusCode == 201) {
-      return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      return jsonDecode(utf8.decode(response.bodyBytes))
+          as Map<String, dynamic>;
     }
     throw Exception('일정 생성 실패 (${response.statusCode}): ${response.body}');
+  }
+
+  // 월간 AI 계획 생성
+  static Future<Map<String, dynamic>> generateMonthlyPlan({
+    required String rawText,
+    required int year,
+    required int month,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/schedule/generate'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'user_id': _userId,
+        'raw_text': rawText,
+        'plan_year': year,
+        'plan_month': month,
+      }),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(utf8.decode(response.bodyBytes))
+          as Map<String, dynamic>;
+    }
+    throw Exception('월간 계획 생성 실패 (${response.statusCode}): ${response.body}');
+  }
+
+  // 월간 달력 데이터 조회
+  static Future<Map<String, dynamic>> getMonthlyCalendar({
+    required int year,
+    required int month,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/schedule/$_userId/month?year=$year&month=$month'),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes))
+          as Map<String, dynamic>;
+    }
+    throw Exception('월간 달력 조회 실패: ${response.statusCode}');
+  }
+
+  // 날짜 상세 데이터 조회
+  static Future<Map<String, dynamic>> getDayDetail(
+      {required String date}) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/schedule/$_userId/day?date=$date'),
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(utf8.decode(response.bodyBytes))
+          as Map<String, dynamic>;
+    }
+    throw Exception('날짜 상세 조회 실패: ${response.statusCode}');
   }
 
   // 태스크 완료 처리
@@ -38,7 +93,8 @@ class ApiService {
     );
 
     if (response.statusCode == 200) {
-      return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      return jsonDecode(utf8.decode(response.bodyBytes))
+          as Map<String, dynamic>;
     }
     throw Exception('스트릭 조회 실패: ${response.statusCode}');
   }

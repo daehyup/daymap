@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import 'screens/home_screen.dart';
@@ -7,8 +6,12 @@ import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  await NotificationService.init();
+  try {
+    await Firebase.initializeApp();
+    await NotificationService.init();
+  } catch (e) {
+    debugPrint('Firebase initialization skipped: $e');
+  }
   runApp(const DaymapApp());
 }
 

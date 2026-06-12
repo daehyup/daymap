@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 
 class InputScreen extends StatefulWidget {
-  final VoidCallback? onSuccess;
+  final ValueChanged<DateTime>? onSuccess;
 
   const InputScreen({super.key, this.onSuccess});
 
@@ -15,12 +15,14 @@ class _InputScreenState extends State<InputScreen> {
   final _focusNode = FocusNode();
   bool _isLoading = false;
   String? _errorMessage;
+  late DateTime _selectedMonth =
+      DateTime(DateTime.now().year, DateTime.now().month);
 
   static const _examples = [
-    '정보처리기사 실기 7월 20일',
+    '정보처리기사 실기 6월 20일',
+    '알바 화·토·일',
+    '매일 영어 30분',
     '기말고사 6월 25일',
-    '알바 매주 수·토·일',
-    '매일 운동 1시간',
   ];
 
   Future<void> _submit() async {
@@ -37,9 +39,13 @@ class _InputScreenState extends State<InputScreen> {
     });
 
     try {
-      await ApiService.generateSchedule(text);
+      await ApiService.generateMonthlyPlan(
+        rawText: text,
+        year: _selectedMonth.year,
+        month: _selectedMonth.month,
+      );
       if (!mounted) return;
-      widget.onSuccess?.call();
+      widget.onSuccess?.call(_selectedMonth);
     } catch (e) {
       if (!mounted) return;
       setState(() => _errorMessage = '분석에 실패했어요. 잠시 후 다시 시도해주세요.');
@@ -50,7 +56,7 @@ class _InputScreenState extends State<InputScreen> {
 
   void _appendExample(String example) {
     final current = _controller.text;
-    _controller.text = current.isEmpty ? example : '$current, $example';
+    _controller.text = current.isEmpty ? example : '$current\n$example';
     _controller.selection = TextSelection.fromPosition(
       TextPosition(offset: _controller.text.length),
     );
@@ -66,8 +72,6 @@ class _InputScreenState extends State<InputScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
     return Stack(
       children: [
         Scaffold(
@@ -85,6 +89,12 @@ class _InputScreenState extends State<InputScreen> {
                 children: [
                   _Header(),
                   const SizedBox(height: 24),
+                  _MonthPicker(
+                    selectedMonth: _selectedMonth,
+                    onChanged: (month) =>
+                        setState(() => _selectedMonth = month),
+                  ),
+                  const SizedBox(height: 16),
                   _InputField(
                     controller: _controller,
                     focusNode: _focusNode,
@@ -106,8 +116,9 @@ class _InputScreenState extends State<InputScreen> {
                       ),
                     ),
                     child: const Text(
-                      '일정 분석하기',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      '월간 계획 세우기',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
@@ -128,19 +139,55 @@ class _Header extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '어떤 일정이 있나요?',
+          '이번 달에 어떤 일정이 있나요?',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
         ),
         const SizedBox(height: 6),
         Text(
-          'AI가 일정을 분석해서 오늘 할일을 자동으로 배분해드려요.',
+          'AI가 마감일과 반복 일정을 분석해서 월간 할일로 배분해드려요.',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Colors.grey.shade600,
               ),
         ),
       ],
+    );
+  }
+}
+
+class _MonthPicker extends StatelessWidget {
+  final DateTime selectedMonth;
+  final ValueChanged<DateTime> onChanged;
+
+  const _MonthPicker({required this.selectedMonth, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final months = List.generate(
+      14,
+      (index) => DateTime(now.year, now.month - 1 + index),
+    );
+
+    return DropdownButtonFormField<DateTime>(
+      initialValue: selectedMonth,
+      decoration: InputDecoration(
+        labelText: '계획할 월',
+        prefixIcon: const Icon(Icons.calendar_month),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      items: months
+          .map(
+            (month) => DropdownMenuItem(
+              value: month,
+              child: Text('${month.year}년 ${month.month}월'),
+            ),
+          )
+          .toList(),
+      onChanged: (month) {
+        if (month != null) onChanged(month);
+      },
     );
   }
 }
@@ -168,7 +215,7 @@ class _InputField extends StatelessWidget {
       minLines: 5,
       textInputAction: TextInputAction.newline,
       decoration: InputDecoration(
-        hintText: '예: 정보처리기사 실기 7월 20일, 기말고사 6월 25일,\n알바 매주 수·토·일, 매일 운동 1시간',
+        hintText: '예)\n정보처리기사 실기 6월 20일\n알바 매주 화, 토, 일\n영어 공부 매일 30분',
         hintStyle: TextStyle(color: Colors.grey.shade400, height: 1.6),
         errorText: errorMessage,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
@@ -237,7 +284,7 @@ class _LoadingOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.black.withOpacity(0.45),
+      color: Colors.black.withValues(alpha: 0.45),
       child: Center(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
@@ -253,7 +300,7 @@ class _LoadingOverlay extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               const Text(
-                'AI가 일정을 분석중이에요...',
+                'AI가 월간 계획을 세우는 중이에요...',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 4),
